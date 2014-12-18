@@ -24,3 +24,21 @@ struct mac_sound_output
     real32 tSine;
     int LatencySampleCount;
 };
+
+
+
+enum keyCodes
+{
+	HHAKey = 0,
+	HHSKey = 1,
+	HHDKey = 2,
+	HHQKey = 12,
+	HHWKey = 13,
+	HHEKey = 14,
+	HHSpaceKey = 49,
+	HHEscKey = 53,
+	HHLeftKey = 123,
+	HHRightKey = 124,
+	HHDownKey = 125,
+	HHUpKey = 126
+};

@@ -75,6 +75,68 @@ DEBUGPlatformWriteEntireFile(char *Filename, uint32 MemorySize, void *Memory)
 	bool32 Result = false;
 	return Result;
 }
+internal void
+MacProcessKeyboardMessage(game_button_state *NewState, bool32 IsDown)
+{
+    //Assert(NewState->EndedDown != IsDown);
+    NewState->EndedDown = IsDown;
+    ++NewState->HalfTransitionCount;
+}
+
+internal void
+MacProcessPendingMessages(game_controller_input *KeyboardController)
+{
+	NSEvent *event;
+	do
+	{
+		event = [NSApp nextEventMatchingMask:NSAnyEventMask
+								   untilDate:nil
+									  inMode:NSDefaultRunLoopMode
+									 dequeue:YES];
+		switch(event.type)
+		{
+			case NSKeyDown:
+			case NSKeyUp:
+			{
+				bool32 WasDown = (event.isARepeat == YES);
+				bool32 IsDown = (event.type == NSKeyDown);
+				if (1 || WasDown != IsDown) {
+					if (event.keyCode == HHWKey) {
+						MacProcessKeyboardMessage(&KeyboardController->MoveUp, IsDown);
+					} else if (event.keyCode == HHAKey) {
+						MacProcessKeyboardMessage(&KeyboardController->MoveLeft, IsDown);
+					} else if (event.keyCode == HHSKey) {
+						MacProcessKeyboardMessage(&KeyboardController->MoveDown, IsDown);
+					} else if (event.keyCode == HHDKey) {
+						MacProcessKeyboardMessage(&KeyboardController->MoveRight, IsDown);
+					} else if (event.keyCode == HHQKey) {
+						MacProcessKeyboardMessage(&KeyboardController->LeftShoulder, IsDown);
+					} else if (event.keyCode == HHEKey) {
+						MacProcessKeyboardMessage(&KeyboardController->RightShoulder, IsDown);
+					} else if (event.keyCode == HHUpKey) {
+						MacProcessKeyboardMessage(&KeyboardController->ActionUp, IsDown);
+					} else if (event.keyCode == HHLeftKey) {
+						MacProcessKeyboardMessage(&KeyboardController->ActionLeft, IsDown);
+					} else if (event.keyCode == HHDownKey) {
+						MacProcessKeyboardMessage(&KeyboardController->ActionDown, IsDown);
+					} else if (event.keyCode == HHRightKey) {
+						MacProcessKeyboardMessage(&KeyboardController->ActionRight, IsDown);
+					} else if (event.keyCode == HHEscKey) {
+						MacProcessKeyboardMessage(&KeyboardController->Start, IsDown);
+					} else if (event.keyCode == HHSpaceKey) {
+						MacProcessKeyboardMessage(&KeyboardController->Back, IsDown);
+					}
+				}
+				NSLog(@"Peppers: %@", event);
+			} break;
+			default:
+			{
+				[NSApp sendEvent:event];
+				[NSApp updateWindows];
+			} break;
+		}
+	} while (event != nil);
+}
 
 internal void
 MacResizeBuffer(mac_offscreen_buffer *Buffer, int Width, int Height)
@@ -143,16 +205,11 @@ MacDisplayBufferInWindow(mac_offscreen_buffer *Buffer, CGContextRef DeviceContex
 	CGContextFlush(DeviceContext);
 }
 
-typedef struct SoundState {
-	float toneFreq, volume;
-	float sampleRate, frameOffset;
-	float squareWaveSign;
-}SoundState;
-
 void MyAudioQueueOutputCallback (void *inUserData, AudioQueueRef queue, AudioQueueBufferRef buffer)
 {
 	uint32_t framesToGen = buffer->mAudioDataBytesCapacity / 4;
 	buffer->mAudioDataByteSize = framesToGen * 4;
+			NSLog(@"SoundCallback");
 	AudioQueueEnqueueBuffer(queue, buffer, 0, 0);
 }
 
@@ -223,14 +280,10 @@ int main(int argc, char** argv) {
 	AudioQueueBufferRef SoundBufferRef2 = {};
 	
 	// our persistent state for sound playback
-	SoundState SoundOutput=  {};
-	SoundOutput.toneFreq = 261.6 * 3; // 261.6 ~= Middle C frequency
-	SoundOutput.volume = 0.1; // don't crank this up and expect your ears to still function
-	SoundOutput.sampleRate = 48000.0f;
-	SoundOutput.squareWaveSign = 1; // sign of the current part of the square wave
+	mac_sound_output SoundOutput = {};
 	
 	AudioStreamBasicDescription StreamDescription = { 0 };
-	StreamDescription.mSampleRate = SoundOutput.sampleRate;
+	StreamDescription.mSampleRate = 48000.0f;
 	StreamDescription.mFormatID = kAudioFormatLinearPCM;
 	StreamDescription.mFormatFlags = kLinearPCMFormatFlagIsBigEndian | kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked;
 	StreamDescription.mBytesPerPacket = 4;
@@ -244,6 +297,9 @@ int main(int argc, char** argv) {
 		NSLog(@"OOPS");
 		Assert(0);
 	}
+	
+	
+	AudioQueueSetParameter(queue, kAudioQueueParam_Volume, 0.005);
 	
 	uint32_t bufferSize = StreamDescription.mBytesPerFrame * (StreamDescription.mSampleRate / 16);
 	
@@ -294,21 +350,24 @@ int main(int argc, char** argv) {
 	
 	CGContextRef DeviceContext = (CGContextRef)[[window graphicsContext] graphicsPort];
 	
-	NSEvent *event;
 	GlobalRunning = YES;
 	while (GlobalRunning && ([[application windows] count] > 0))
 	{
 		@autoreleasepool {
-			do
+			game_controller_input *OldKeyboardController = GetController(OldInput, 0);
+			game_controller_input *NewKeyboardController = GetController(NewInput, 0);
+			*NewKeyboardController = {};
+			NewKeyboardController->IsConnected = true;
+			
+			for(int ButtonIndex = 0;
+				ButtonIndex < ArrayCount(NewKeyboardController->Buttons);
+				++ButtonIndex)
 			{
-				event = [NSApp nextEventMatchingMask:NSAnyEventMask
-										   untilDate:nil
-											  inMode:NSDefaultRunLoopMode
-											 dequeue:YES];
-				
-				[NSApp sendEvent:event];
-				[NSApp updateWindows];
-			} while (event != nil);
+				NewKeyboardController->Buttons[ButtonIndex].EndedDown =
+					OldKeyboardController->Buttons[ButtonIndex].EndedDown;
+			}
+			
+			MacProcessPendingMessages(NewKeyboardController);
 			
 			game_offscreen_buffer Buffer = {};
 			Buffer.Memory = GlobalBackbuffer.Memory;
@@ -317,26 +376,25 @@ int main(int argc, char** argv) {
 			Buffer.Pitch = GlobalBackbuffer.Pitch;
 			GameUpdateAndRender(&GameMemory, Input, &Buffer);
 			
-			// 			uint32 ByteToLock = ((SoundOutput.RunningSampleIndex*SoundOutput.BytesPerSample) %
-			// 								 SoundOutput.SecondaryBufferSize);
+// 			uint32 ByteToLock = ((SoundOutput.RunningSampleIndex*SoundOutput.BytesPerSample) %
+// 								 SoundOutput.SecondaryBufferSize);
 			game_sound_output_buffer GameSoundBufferA = {};
-			GameSoundBufferA.SamplesPerSecond = SoundOutput.sampleRate;
+			GameSoundBufferA.SamplesPerSecond = StreamDescription.mSampleRate;
 			GameSoundBufferA.SampleCount = SoundBufferRef1->mAudioDataBytesCapacity / 4;
 			GameSoundBufferA.Samples = (int16*)(SoundBufferRef1->mAudioData);
 			SoundBufferRef1->mAudioDataByteSize = GameSoundBufferA.SampleCount * 4;
 			
 			game_sound_output_buffer GameSoundBufferB = {};
-			GameSoundBufferB.SamplesPerSecond = SoundOutput.sampleRate;
+			GameSoundBufferB.SamplesPerSecond = StreamDescription.mSampleRate;
 			GameSoundBufferB.SampleCount = SoundBufferRef2->mAudioDataBytesCapacity / 4;
 			GameSoundBufferB.Samples = (int16*)SoundBufferRef2->mAudioData;
 			SoundBufferRef2->mAudioDataByteSize = GameSoundBufferB.SampleCount * 4;
 			
-			//GameOutputSound(&GameSoundBufferA, SoundOutput.toneFreq);
-			//GameOutputSound(&GameSoundBufferB, SoundOutput.toneFreq);
+			
 			GameGetSoundSamples(&GameMemory, &GameSoundBufferA);
 			GameGetSoundSamples(&GameMemory, &GameSoundBufferB);
-			
-			
+			NSLog(@"GameLoop");
+						
 			mac_window_dimension Dimension = MacGetWindowDimension(window);
 			MacDisplayBufferInWindow(&GlobalBackbuffer, DeviceContext,
 									 Dimension.Width, Dimension.Height);
