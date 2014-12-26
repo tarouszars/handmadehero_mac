@@ -2,3 +2,5 @@
 build/Handmade.app
 code/handmade.cpp
 code/handmade.h
+code/handmade_platform.h
+code/tags

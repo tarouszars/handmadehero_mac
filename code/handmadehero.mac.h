@@ -1,3 +1,4 @@
+#if !defined(MAC_HANDMADE_H)
 struct mac_offscreen_buffer
 {
     // NOTE(casey): Pixels are alwasy 32-bits wide, Memory Order BB GG RR XX
@@ -25,6 +26,54 @@ struct mac_sound_output
     int LatencySampleCount;
 };
 
+struct mac_debug_time_marker
+{
+    uint32 OutputPlayCursor;
+    uint32 OutputWriteCursor;
+    uint32 OutputLocation;
+    uint32 OutputByteCount;
+    uint32 ExpectedFlipPlayCursor;
+
+    uint32 FlipPlayCursor;
+    uint32 FlipWriteCursor;
+};
+
+struct mac_game_code
+{
+    void *GameCodeDLL;
+    time_t DLLLastWriteTime;
+
+    // IMPORTANT(casey): Either of the callbacks can be 0!  You must
+    // check before calling.
+    game_update_and_render *UpdateAndRender;
+    game_get_sound_samples *GetSoundSamples;
+
+    bool32 IsValid;
+};
+
+#define MAC_MAX_FILENAME_SIZE 4096
+struct mac_replay_buffer
+{
+    FILE *FileHandle;
+    FILE *MemoryMap;
+    char FileName[MAC_MAX_FILENAME_SIZE];
+    void *MemoryBlock;
+};
+struct mac_state
+{
+    uint64 TotalSize;
+    void *GameMemoryBlock;
+    mac_replay_buffer ReplayBuffers[4];
+    
+    FILE *RecordingHandle;
+    int InputRecordingIndex;
+
+    FILE *PlaybackHandle;
+    int InputPlayingIndex;
+    
+    char AppFileName[MAC_MAX_FILENAME_SIZE];
+    char *OnePastLastAppFileNameSlash;
+};
 
 
 enum keyCodes
@@ -35,6 +84,8 @@ enum keyCodes
 	HHQKey = 12,
 	HHWKey = 13,
 	HHEKey = 14,
+	HHPKey = 35,
+	HHLKey = 35,
 	HHSpaceKey = 49,
 	HHEscKey = 53,
 	HHLeftKey = 123,
@@ -42,3 +93,6 @@ enum keyCodes
 	HHDownKey = 125,
 	HHUpKey = 126
 };
+
+#define MAC_HANDMADE_H
+#endif

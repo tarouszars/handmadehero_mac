@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>SchemeUserState</key>
+	<dict>
+		<key>Handmade.xcscheme</key>
+		<dict>
+			<key>orderHint</key>
+			<integer>0</integer>
+		</dict>
+		<key>HandmadeDos.xcscheme</key>
+		<dict>
+			<key>orderHint</key>
+			<integer>1</integer>
+		</dict>
+		<key>hh2.xcscheme</key>
+		<dict>
+			<key>orderHint</key>
+			<integer>2</integer>
+		</dict>
+	</dict>
+	<key>SuppressBuildableAutocreation</key>
+	<dict>
+		<key>A8891FCA1A4D364E00B0ECE7</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+		<key>A8891FD21A4D381800B0ECE7</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+		<key>A8891FE51A4D381800B0ECE7</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+		<key>A8891FF41A4D388C00B0ECE7</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+	</dict>
+</dict>
+</plist>
