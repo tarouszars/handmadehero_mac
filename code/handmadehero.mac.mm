@@ -22,7 +22,7 @@
 // TODO(casey): Implement sine ourselves
 #include <Cocoa/Cocoa.h>
 
-#include "handmade.h"
+#include "casey/handmade.h"
 
 #include <mach-o/dyld.h>
 #include "AudioToolbox/AudioToolbox.h"
@@ -422,32 +422,24 @@ internal void
 MacDisplayBufferInWindow(mac_offscreen_buffer *Buffer, CGContextRef DeviceContext,
 						 int WindowWidth, int WindowHeight)
 {
-	local_persist int lastScaleW = Buffer->Width;
-	local_persist int lastScaleH = Buffer->Height;
 	
-	CGRect rect = CGRectMake(0,0, Buffer->Width,Buffer->Height);
-	CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+	CGRect rect = CGRectMake(0,(WindowHeight - Buffer->Height), Buffer->Width, Buffer->Height);
 	
 	size_t bitsPerComponent = 8;
 	size_t bitsPerPixel = bitsPerComponent * 4;
 	size_t BitmapMemorySize = (Buffer->Width * Buffer->Height * 4);
+	
+	CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
 	CGDataProviderRef provider = CGDataProviderCreateWithData (NULL, Buffer->Memory, BitmapMemorySize, 0);
-	
 	CGImageRef image = CGImageCreate(Buffer->Width, Buffer->Height, bitsPerComponent, bitsPerPixel,
-									 Buffer->Pitch, space, kCGImageAlphaNoneSkipLast, provider, 0, 0, kCGRenderingIntentDefault);
-	CGContextDrawImage(DeviceContext, rect, image);
+									 Buffer->Pitch, space, kCGImageAlphaNoneSkipFirst | kCGBitmapByteOrder32Little, provider, 0, 0, kCGRenderingIntentDefault);
 	
-	if (lastScaleW != WindowWidth ||
-		lastScaleH != WindowHeight) {
-		
-		real32 WidthScale = (real32)WindowWidth / (real32)lastScaleW;
-		real32 HeightScale = (real32)WindowHeight / (real32)lastScaleH;
-		CGContextScaleCTM(DeviceContext, WidthScale, HeightScale);
-	}
-	lastScaleW = WindowWidth;
-	lastScaleH = WindowHeight;
-	CGImageRelease(image);
+	CGContextDrawImage(DeviceContext, rect, image);
 	CGContextFlush(DeviceContext);
+	
+	CGImageRelease(image);
+	CGDataProviderRelease(provider);
+	CGColorSpaceRelease(space);
 }
 
 int main(int argc, char** argv) {
