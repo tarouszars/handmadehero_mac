@@ -1,28 +1,6 @@
-/*
- TODO(casey):  THIS IS NOT A FINAL PLATFORM LAYER!!!
- 
- - Saved game locations
- - Getting a handle to our own executable file
- - Asset loading path
- - Threading (launch a thread)
- - Raw Input (support for multiple keyboards)
- - Sleep/timeBeginPeriod
- - ClipCursor() (for multimonitor support)
- - Fullscreen support
- - WM_SETCURSOR (control cursor visibility)
- - QueryCancelAutoplay
- - WM_ACTIVATEAPP (for when we are not the active application)
- - Blit speed improvements (BitBlt)
- - Hardware acceleration (OpenGL or Direct3D or BOTH??)
- - GetKeyboardLayout (for French keyboards, international WASD support)
- 
- Just a partial list of stuff!!
- */
-
-// TODO(casey): Implement sine ourselves
 #include <Cocoa/Cocoa.h>
 
-#include "casey/handmade.h"
+#include "casey/handmade_platform.h"
 
 #include <mach-o/dyld.h>
 #include "AudioToolbox/AudioToolbox.h"
@@ -379,6 +357,23 @@ MacProcessPendingMessages(game_controller_input *KeyboardController)
 					if (IsDown && !WasDown) {
 						GlobalPause = !GlobalPause;
 					}
+				} else if (event.keyCode == HHReturnKey) {
+					if (IsDown && !WasDown) {
+						if (([event modifierFlags] & NSCommandKeyMask)) {
+							local_persist NSRect oldFrame;
+							NSWindow *window = [NSApp keyWindow];
+							if ((window.styleMask & NSFullScreenWindowMask) == NSFullScreenWindowMask) {
+								[window setStyleMask:NSResizableWindowMask|NSMiniaturizableWindowMask|NSClosableWindowMask|NSTitledWindowMask];
+								[window setFrame:oldFrame display:YES];
+								[NSApp setPresentationOptions:NSApplicationPresentationDefault];
+							} else {
+								oldFrame = [window frame];
+								[window setStyleMask:NSFullScreenWindowMask];
+								[window setFrame:[[NSScreen mainScreen] frame] display:YES];
+								[NSApp setPresentationOptions:NSApplicationPresentationHideMenuBar|NSApplicationPresentationHideDock];
+							}
+						}
+					}
 				} else if (event.keyCode == HHLKey) {
 					NSLog(@"SaveGameState");
 				} else if (event.keyCode == HHUpKey) {
@@ -449,6 +444,22 @@ MacDisplayBufferInWindow(mac_offscreen_buffer *Buffer, CGContextRef DeviceContex
 {
 	
 	CGRect rect = CGRectMake(0,(WindowHeight - Buffer->Height), Buffer->Width, Buffer->Height);
+	if((WindowWidth >= Buffer->Width*2) &&
+	   (WindowHeight >= Buffer->Height*2))
+	{
+		real32 WindowRatio = (real32)WindowWidth / (real32)WindowHeight;
+		real32 Ratio = (real32)Buffer->Width / (real32)Buffer->Height;
+		if (WindowRatio > Ratio) {
+			// Wider than tall
+			rect = CGRectMake(0,0, WindowHeight * Ratio, WindowHeight);
+		} else {
+			rect = CGRectMake(0,0, WindowWidth, WindowWidth / Ratio);
+		}
+	}
+	CGRect windowRect = CGRectMake(0,0, WindowWidth, WindowHeight);
+	
+	CGContextSetRGBFillColor(DeviceContext, 0.0f, 0.0f, 0.0f, 1.0f);
+	CGContextFillRect ( DeviceContext, windowRect );
 	
 	size_t bitsPerComponent = 8;
 	size_t bitsPerPixel = bitsPerComponent * 4;
@@ -518,7 +529,7 @@ int main(int argc, char** argv) {
 													styleMask:NSResizableWindowMask|NSMiniaturizableWindowMask|NSClosableWindowMask|NSTitledWindowMask
 													  backing:NSBackingStoreBuffered
 														defer:NO];
-	[window setMinSize:NSMakeSize(100, 100)];
+	[window setMinSize:NSMakeSize(WindowWidth, WindowHeight)];
 	[window setTitle:@"HandmadeHero OSX"];
 	[window makeKeyAndOrderFront:nil];
 	[application finishLaunching];
