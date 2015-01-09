@@ -35,7 +35,9 @@
 global_variable BOOL GlobalRunning;
 global_variable bool32 GlobalPause;
 global_variable mac_offscreen_buffer GlobalBackbuffer;
+global_variable void *GlobalSecondaryBuffer;
 global_variable mach_timebase_info_data_t GlobalPerfCountFrequency;
+global_variable mac_state MacState;
 
 internal void
 CatStrings(size_t SourceACount, char *SourceA,
@@ -88,6 +90,16 @@ StringLength(char *String)
     }
     return(Count);
 }
+
+internal void
+MacBuildAppPathFileName(mac_state *State, char *FileName,
+						int DestCount, char *Dest)
+{
+	CatStrings(State->OnePastLastAppFileNameSlash - State->AppFileName, State->AppFileName,
+			   StringLength(FileName), FileName,
+			   DestCount, Dest);
+}
+
 DEBUG_PLATFORM_FREE_FILE_MEMORY(DEBUGPlatformFreeFileMemory)
 {
     if(Memory)
@@ -99,11 +111,17 @@ DEBUG_PLATFORM_FREE_FILE_MEMORY(DEBUGPlatformFreeFileMemory)
 DEBUG_PLATFORM_READ_ENTIRE_FILE(DEBUGPlatformReadEntireFile)
 {
     debug_read_file_result Result = {};
-    
-    FILE *FileHandle = fopen(Filename, "r");
-    if(FileHandle)
+	
+	char FullPath[MAC_MAX_FILENAME_SIZE];
+	CatStrings(MacState.ResourcesDirectorySize, MacState.ResourcesDirectory,
+			   StringLength(Filename), Filename,
+			   sizeof(FullPath), FullPath);
+	
+    FILE *FileHandle = fopen(FullPath, "r");
+    if(FileHandle != NULL)
     {
-        int FileSize = fseek(FileHandle, 0, SEEK_END);
+		fseek(FileHandle, 0, SEEK_END);
+		int FileSize = ftell(FileHandle);
         if(FileSize)
         {
         	rewind(FileHandle);
@@ -228,37 +246,33 @@ MacUnloadGameCode(mac_game_code *GameCode)
 }
 
 
-void MyAudioQueueOutputCallback (void *inUserData, AudioQueueRef queue, AudioQueueBufferRef buffer)
+void MacAudioQueueOutputCallback (void *inUserData, AudioQueueRef queue, AudioQueueBufferRef buffer)
 {
-	uint32_t framesToGen = buffer->mAudioDataBytesCapacity / 4;
-	buffer->mAudioDataByteSize = framesToGen * 4;
+	NSLog(@"Callback");
+	
+	mac_sound_output *SoundOutput = (mac_sound_output *)inUserData;
+	
+// 	int16 *SourceSample = (int16 *)GlobalSecondaryBuffer;
+// 	int16 *DestSample = (int16 *)buffer->mUserData;
+// 	if (SourceSample) {
+// 		for(uint32 SampleIndex = 0;
+// 			SampleIndex < SoundOutput->SecondaryBufferSize;
+// 			++SampleIndex)
+// 		{
+// 			*DestSample++ = *SourceSample++;
+// 			++SoundOutput->RunningSampleIndex;
+// 		}
+// 	}
+//	buffer->mAudioDataByteSize = SoundOutput->SecondaryBufferSize;
+    uint32_t framesToGen = buffer->mAudioDataBytesCapacity / 4;
+    buffer->mAudioDataByteSize = framesToGen * 4;
 	AudioQueueEnqueueBuffer(queue, buffer, 0, 0);
 }
 internal void
-MacInitSound(mac_sound_output SoundOutput)
+MacInitSound(mac_sound_output *SoundOutput, int32 SamplesPerSecond, int32 BufferSize)
 {
-
-	// Setup Sound
-	
-	// To add playback functionality to your application, you typically perform the following steps:
-	//
-	// Define a custom structure to manage state, format, and path information.
-	// Write an audio queue callback function to perform the actual playback.
-	// Write code to determine a good size for the audio queue buffers.
-	// Open an audio file for playback and determine its audio data format.
-	// Create a playback audio queue and configure it for playback.
-	// Allocate and enqueue audio queue buffers. Tell the audio queue to start playing. When done, the playback callback tells the audio queue to stop.
-	// Dispose of the audio queue. Release resources.
-	// The remainder of this chapter describes each of these steps in detail.
-	//
-	
-	AudioQueueRef queue;
-	
-	AudioQueueBufferRef SoundBufferRef1 = {};
-	AudioQueueBufferRef SoundBufferRef2 = {};
-	
 	AudioStreamBasicDescription StreamDescription = { 0 };
-	StreamDescription.mSampleRate = 48000.0f;
+	StreamDescription.mSampleRate = SamplesPerSecond;
 	StreamDescription.mFormatID = kAudioFormatLinearPCM;
 	StreamDescription.mFormatFlags = kLinearPCMFormatFlagIsBigEndian | kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked;
 	StreamDescription.mBytesPerPacket = 4;
@@ -267,44 +281,55 @@ MacInitSound(mac_sound_output SoundOutput)
 	StreamDescription.mChannelsPerFrame = 2;
 	StreamDescription.mBitsPerChannel = 16;
 	
-	OSStatus QueueStatus = AudioQueueNewOutput (&StreamDescription, MyAudioQueueOutputCallback, &SoundOutput, 0, 0, 0, &queue);
+	OSStatus QueueStatus = AudioQueueNewOutput (&StreamDescription, MacAudioQueueOutputCallback, SoundOutput, 0, 0, 0, &SoundOutput->Queue);
 	if (QueueStatus == kAudioFormatUnsupportedDataFormatError) {
 		NSLog(@"OOPS");
 		Assert(0);
 	}
-	AudioQueueSetParameter(queue, kAudioQueueParam_Volume, 0.005);
+	AudioQueueSetParameter(SoundOutput->Queue, kAudioQueueParam_Volume, 0.005);
 	
-	uint32_t bufferSize = StreamDescription.mBytesPerFrame * (StreamDescription.mSampleRate / 16);
+	for (uint32 i = 0; 
+		 i < ArrayCount(SoundOutput->Buffers);
+		 i++) {
+		QueueStatus = AudioQueueAllocateBuffer (SoundOutput->Queue, BufferSize, &SoundOutput->Buffers[i]);
+		
+		// TODO (Mike): We may not need to prime buffers the first time through. 
+		// What is it playing if we do? We have no sound yet.
+		MacAudioQueueOutputCallback (&SoundOutput, SoundOutput->Queue, SoundOutput->Buffers[i]);
+	}
 	
-	QueueStatus = AudioQueueAllocateBuffer (queue, bufferSize, &(SoundBufferRef1));
-	QueueStatus = AudioQueueAllocateBuffer (queue, bufferSize, &(SoundBufferRef2));
-	
-	MyAudioQueueOutputCallback (&SoundOutput, queue, SoundBufferRef1);
-	MyAudioQueueOutputCallback (&SoundOutput, queue, SoundBufferRef2);
-	
-	QueueStatus = AudioQueueStart (queue, NULL);
+	QueueStatus = AudioQueueStart (SoundOutput->Queue, NULL);
 	printf ("Audio Queue Started: %d\n", QueueStatus);
-	
-	// 	int16 *Samples = (int16 *)buf_ref;
-	// 	int16 *Samples2 = (int16 *)buf_ref2;
-	//	int16 *Samples;
-	//
-	//	kern_return_t sound_result = vm_allocate((vm_map_t)mach_task_self(),
-	//											 (vm_address_t*)&Samples,
-	//											 SoundOutput.SecondaryBufferSize,
-	//											 VM_FLAGS_ANYWHERE);
-	//	Assert(sound_result == KERN_SUCCESS);
 }
-
 
 internal void
-MacBuildAppPathFileName(mac_state *State, char *FileName,
-                          int DestCount, char *Dest)
+MacClearBuffer(mac_sound_output *SoundOutput)
 {
-    CatStrings(State->OnePastLastAppFileNameSlash - State->AppFileName, State->AppFileName,
-               StringLength(FileName), FileName,
-               DestCount, Dest);
+	uint16 *DestSample = (uint16 *)GlobalSecondaryBuffer;
+	for(uint32 ByteIndex = 0;
+		ByteIndex < SoundOutput->BytesPerSample;
+		++ByteIndex)
+	{
+		*DestSample++ = 0;
+	}
 }
+
+internal void
+MacFillSoundBuffer(mac_sound_output *SoundOutput, uint32 ByteToLock, uint32 BytesToWrite,
+                     game_sound_output_buffer *SourceBuffer)
+{
+	int16 *DestSample = (int16 *)GlobalSecondaryBuffer;
+	int16 *SourceSample = SourceBuffer->Samples;
+	for(uint32 SampleIndex = 0;
+		SampleIndex < BytesToWrite;
+		++SampleIndex)
+	{
+		*DestSample++ = *SourceSample++;
+		++SoundOutput->RunningSampleIndex;
+	}
+}
+
+
 internal void
 MacProcessKeyboardMessage(game_button_state *NewState, bool32 IsDown)
 {
@@ -444,15 +469,19 @@ MacDisplayBufferInWindow(mac_offscreen_buffer *Buffer, CGContextRef DeviceContex
 
 int main(int argc, char** argv) {
 	
-    mac_state MacState = {};
-    
+	MacState = {};
+	
 	mach_timebase_info(&GlobalPerfCountFrequency);
 
     MacGetAppFileName(&MacState);
 
-     char SourceGameCodeDLLFullPath[MAC_MAX_FILENAME_SIZE];
-     MacBuildAppPathFileName(&MacState, "GameCode.dylib",
+	char SourceGameCodeDLLFullPath[MAC_MAX_FILENAME_SIZE];
+    MacBuildAppPathFileName(&MacState, "../Resources/GameCode.dylib",
                                sizeof(SourceGameCodeDLLFullPath), SourceGameCodeDLLFullPath);
+	
+	MacBuildAppPathFileName(&MacState, "../Resources/",
+							sizeof(MacState.ResourcesDirectory), MacState.ResourcesDirectory);
+	MacState.ResourcesDirectorySize = StringLength(MacState.ResourcesDirectory);
 	
 	// Set up application and window
 	NSApplication *application = [NSApplication sharedApplication];
@@ -502,10 +531,18 @@ int main(int argc, char** argv) {
 	
 	// our persistent state for sound playback
 	mac_sound_output SoundOutput = {};
+	// TODO(casey): Make this like sixty seconds?
+	SoundOutput.SamplesPerSecond = 48000;
+	SoundOutput.BytesPerSample = sizeof(int16)*2;
+	SoundOutput.SecondaryBufferSize = SoundOutput.SamplesPerSecond*SoundOutput.BytesPerSample;
+	// TODO(casey): Actually compute this variance and see
+	// what the lowest reasonable value is.
+	SoundOutput.SafetyBytes = (int)(((real32)SoundOutput.SamplesPerSecond*(real32)SoundOutput.BytesPerSample / GameUpdateHz)/3.0f);
 	
-	/* NO Sound for now 
-	MacInitSound();
-	*/
+	GlobalSecondaryBuffer = malloc(SoundOutput.SecondaryBufferSize);
+    Assert(GlobalSecondaryBuffer != MAP_FAILED);
+	
+	//MacInitSound(&SoundOutput, SoundOutput.SamplesPerSecond, SoundOutput.SecondaryBufferSize);
 	
 	GlobalRunning = YES;
 
@@ -526,11 +563,6 @@ int main(int argc, char** argv) {
 #endif
 	
 	// Allocate Memory
-#if HANDMADE_INTERNAL
-            char *BaseAddress = (char *)Terabytes(2);
-#else
-            char *BaseAddress = 0;
-#endif
 	game_memory GameMemory = {};
 	GameMemory.PermanentStorageSize = Megabytes(64);
 	GameMemory.TransientStorageSize = Gigabytes(1);
@@ -539,11 +571,16 @@ int main(int argc, char** argv) {
 	GameMemory.DEBUGPlatformWriteEntireFile = DEBUGPlatformWriteEntireFile;
 	
 	uint64 totalSize = GameMemory.PermanentStorageSize + GameMemory.TransientStorageSize;
-	GameMemory.PermanentStorage = mmap(BaseAddress, GameMemory.PermanentStorageSize,
-										PROT_READ|PROT_WRITE,
-                                        MAP_PRIVATE|MAP_FIXED|MAP_ANON,
-                                        -1, 0);
-    Assert(GameMemory.PermanentStorage != MAP_FAILED);
+#if HANDMADE_INTERNAL
+	char *BaseAddress = (char *)Terabytes(2);
+	GameMemory.PermanentStorage = mmap(BaseAddress, totalSize,
+									   PROT_READ|PROT_WRITE,
+									   MAP_PRIVATE|MAP_FIXED|MAP_ANON,
+									   -1, 0);
+	Assert(GameMemory.PermanentStorage != MAP_FAILED);
+#else
+	char *BaseAddress = malloc(totalSize);
+#endif
 	
 	GameMemory.TransientStorage = ((uint8*)GameMemory.PermanentStorage
 								   + GameMemory.PermanentStorageSize);
@@ -688,30 +725,21 @@ int main(int argc, char** argv) {
 				}
 				
 				
-				{
-				uint64 AudioWallClock = mach_absolute_time();
-                real32 FromBeginToAudioSeconds = MacGetSecondsElapsed(FlipWallClock, AudioWallClock);
-                
-				/* Sound is still wrong. Poor Sound...
-	// 			uint32 ByteToLock = ((SoundOutput.RunningSampleIndex*SoundOutput.BytesPerSample) %
-	// 								 SoundOutput.SecondaryBufferSize);
-				game_sound_output_buffer GameSoundBufferA = {};
-				GameSoundBufferA.SamplesPerSecond = StreamDescription.mSampleRate;
-				GameSoundBufferA.SampleCount = SoundBufferRef1->mAudioDataBytesCapacity / 4;
-				GameSoundBufferA.Samples = (int16*)(SoundBufferRef1->mAudioData);
-				SoundBufferRef1->mAudioDataByteSize = GameSoundBufferA.SampleCount * 4;
+				if(Game.GetSoundSamples){
+					uint64 AudioWallClock = mach_absolute_time();
+					real32 FromBeginToAudioSeconds = MacGetSecondsElapsed(FlipWallClock, AudioWallClock);
 				
-				game_sound_output_buffer GameSoundBufferB = {};
-				GameSoundBufferB.SamplesPerSecond = StreamDescription.mSampleRate;
-				GameSoundBufferB.SampleCount = SoundBufferRef2->mAudioDataBytesCapacity / 4;
-				GameSoundBufferB.Samples = (int16*)SoundBufferRef2->mAudioData;
-				SoundBufferRef2->mAudioDataByteSize = GameSoundBufferB.SampleCount * 4;
+					/* Sound is still wrong. Poor Sound... */
+					uint32 ByteToLock = ((SoundOutput.RunningSampleIndex*SoundOutput.BytesPerSample) %
+										 SoundOutput.SecondaryBufferSize);
+					
+					game_sound_output_buffer SoundBuffer = {};
+					SoundBuffer.SamplesPerSecond = SoundOutput.SamplesPerSecond;
+					SoundBuffer.SampleCount = BytesToWrite / SoundOutput.BytesPerSample;
+					SoundBuffer.Samples = (int16 *)GlobalSecondaryBuffer;
 				
 				
-				GameGetSoundSamples(&GameMemory, &GameSoundBufferA);
-				GameGetSoundSamples(&GameMemory, &GameSoundBufferB);
-				NSLog(@"GameLoop");
-				*/
+					Game.GetSoundSamples(&Thread, &GameMemory, &SoundBuffer);
 				}
 				uint64 WorkCounter = mach_absolute_time();
 				real32 WorkSecondsElapsed = MacGetSecondsElapsed(LastCounter, WorkCounter);

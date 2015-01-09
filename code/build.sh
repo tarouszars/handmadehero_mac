@@ -6,6 +6,7 @@ CommonCompilerFlags="-std=gnu++11 -Wall -Wno-c++11-compat-deprecated-writable-st
 
 mkdir -p ../build
 pushd ../build
-g++ -o ../build/Handmade.app/Contents/MacOS/GameCode.dylib ${CommonCompilerFlags} -dynamiclib ../code/casey/handmade.cpp
+g++ -o ../build/Handmade.app/Contents/Resources/GameCode.dylib ${CommonCompilerFlags} -dynamiclib ../code/casey/handmade.cpp
 g++ -o ../build/Handmade.app/Contents/MacOS/Handmade ${CommonCompilerFlags} -framework Cocoa -framework QuartzCore -framework AudioToolbox -lobjc ../code/handmadehero.mac.mm
+cp -R ../data/ ../build/Handmade.app/Contents/Resources
 popd

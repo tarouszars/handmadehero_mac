@@ -24,6 +24,8 @@ struct mac_sound_output
 	uint32 SafetyBytes;
     real32 tSine;
     int LatencySampleCount;
+    AudioQueueBufferRef Buffers[2];
+	AudioQueueRef Queue;
 };
 
 struct mac_debug_time_marker
@@ -69,8 +71,11 @@ struct mac_state
     int InputRecordingIndex;
 
     FILE *PlaybackHandle;
-    int InputPlayingIndex;
-    
+	int InputPlayingIndex;
+	
+	char ResourcesDirectory[MAC_MAX_FILENAME_SIZE];
+	int ResourcesDirectorySize;
+	
     char AppFileName[MAC_MAX_FILENAME_SIZE];
     char *OnePastLastAppFileNameSlash;
 };

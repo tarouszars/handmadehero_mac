@@ -21,6 +21,14 @@ if [ ! -d "${bundleName}.app/Contents/Resources" ]; then
   mkdir -p "${bundleName}.app/Contents/Resources"
 fi
 
+if [ ! -d "${bundleName}.app/Contents/Resources" ]; then
+  mkdir -p "${bundleName}.app/Contents/Framework"
+fi
+
+if [ ! -d "${bundleName}.app/Contents/Resources" ]; then
+  mkdir -p "${bundleName}.app/Contents/Resources/data"
+fi
+
 if [ ! -d "${bundleName}.app/Contents/Resources/Base.lproj" ]; then
   mkdir -p "${bundleName}.app/Contents/Resources/Base.lproj" 
 fi
